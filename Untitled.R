@@ -21,10 +21,39 @@ create_token(
 languages <- langs
 ## Filter out languages that don't have an alpha value
 languages <- langs %>%
-  filter(!is.na(alpha))
+  filter(!is.na(alpha)) %>%
+  ### Comment this out to get full list
+  head()
 
-## Turn the data frame into a list we can loop through
-lang_vector <- as.list(langs['alpha'])
+
+for (language_code in c("en","ja")) {
+  print(paste("The year is", language_code))
+}
+
+for (language_code in c("en","ja")) {
+  print(search_tweets("", n = 100, include_rts = FALSE, lang = language_code, geocode = "51.50,0.15,20mi") )
+}
+
+for (language_code in languages$alpha) {
+    rt_working <- as_tibble(search_tweets("", n = 100, include_rts = FALSE, lang = language_code, geocode = "51.50,0.15,20mi"))
+}
+
+# Save working news URLs to csv files in groups of 100
+write_csv(compile_urls("https://www.rt.com/news/", 1, 100), "data/rt_newsURLs-1.csv") # first 100
+for(i in 1:5){ # 200-600
+  filename <- paste0("data/rt_newsURLs-", i+1, ".csv", "")
+  start <- i*100 +1
+  end <- (i+1)*100
+  
+  write_csv(compile_urls("https://www.rt.com/news/", start, end), filename)
+}
+
+
+language_code <- "en"
+search_tweet_function <- function(language_code) {
+  search_tweets("", n = 100, include_rts = FALSE, lang = glue(' {language_code} '), geocode = "51.50,0.15,20mi")
+}
+
 
 ## London
 
