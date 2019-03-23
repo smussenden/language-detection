@@ -1,94 +1,144 @@
-install.packages('httpuv')
-library(httpuv)
-library(httr)
-
-# 1. Find OAuth settings for github:
-#    http://developer.github.com/v3/oauth/
-oauth_endpoints("github")
-
-# 2. To make your own application, register at
-#    https://github.com/settings/developers. Use any URL for the homepage URL
-#    (http://github.com is fine) and  http://localhost:1410 as the callback url
-#
-#    Replace your key and secret below.
-myapp <- oauth_app("github",
-                   key = "78064c657f967fdfcc42",
-                   secret = "1193f5878ddb2c1112cf00c2c072fb1082379a5a"
-)
-
-# 3. Get OAuth credentials
-github_token <- oauth2.0_token(oauth_endpoints("github"), myapp)
-
-# 4. Use API
-gtoken <- config(token = github_token)
-req <- GET("https://api.github.com/rate_limit", gtoken)
-stop_for_status(req)
-content(req)
-
-# OR:
-req <- with_config(gtoken, GET("https://api.github.com/rate_limit"))
-stop_for_status(req)
-content(req)
-
 #### Project to use Twitter to detect languages in a given area
 
 ## install.packages("rtweet")
-install.packages("glue")
-install.packages("data.table")
-## load packages
+## install.packages("glue")
+## install.packages("data.table")
+## install.packages("httr")
+## install.packages("httpuv")
+## install.packages("jsonlite")
+## install.packages("tidyverse")
+## install.packages("rtweet")
+
+#############################################
+############### load packages ###############
+#############################################
+
+# For connecting directly to Twitter API
+library(httr)
+library(httpuv)
+library(jsonlite)
+
+# Rtweet package for easier connection to search API
 library(rtweet)
+
+# Data wrangling
 library(tidyverse)
-library(glue)
-library(data.table)
-library(httr)
 
-## Create token
-create_token(
-  app = "smussenden_twitter_app",
-  consumer_key = "ckIXDdBqR7IPkLy35jUkwUM7W",
-  consumer_secret = "51uCttObRrpjfEsnoCVRx4VBm1T07yotOeVZO3rmqc3uCbmpRH",
-  access_token = "4166101-SRVESlFuv14ghbHcFoUdelDdnJQKArZp9iF3Ut35GU",
-  access_secret = "Qo6hEh1ugFMvLZQUD2JB08nJRzv7ERYPjUxpXuGmjBdKX")
+#############################################
+###### Connect to Twitter API with HTTR #####
+#############################################
 
+# Modified version of directions here: 
+# https://github.com/r-lib/httr/blob/master/demo/oauth1-twitter.r
 
-library(httr)
+# First, need to register an app at https://apps.twitter.com/ for use with httr.
+# The directions say, in the app, to make sure to set callback url to "http://127.0.0.1:1410/".  That didn't work for me, kept getting 403 errors (forbidden), which was a sign that there was a problem with callback URL.  It was only after I added every possible itteration of that URL, including localhost/1410, that it actually worked! You can add up to 10 callback URLs, so add as many as you want. This is what I put. https://localhost:1410, http://127.0.0.1:1410/, https://127.0.0.1:1410, http://localhost:1410, https://localhost:1410/, http://localhost:1410/, https://127.0.0.1:1410/, http://127.0.0.1:1410
 
-# 1. Find OAuth settings for twitter:
-#    https://dev.twitter.com/docs/auth/oauth
-oauth_endpoints("twitter")
-
-# 2. Register an application at https://apps.twitter.com/
-#    Make sure to set callback url to "http://127.0.0.1:1410/"
-#
-#    Replace key and secret below
-myapp <- oauth_app("twitter",
-                   key = "fLJr0HHU9NCOKSPsozDI3j17W",
-                   secret = "cizBpyVkfkbOaor5rFrqTT1k8eKicZ9N9RZLyCqdxuwxhzEoRk"
+# Add in app name, consumer API key and consumer secret key, and store as myapp.
+myapp <- oauth_app("smussenden_twitter_app",
+                   key = "ckIXDdBqR7IPkLy35jUkwUM7W",
+                   secret = "51uCttObRrpjfEsnoCVRx4VBm1T07yotOeVZO3rmqc3uCbmpRH"
 )
 
-# 3. Get OAuth credentials
-twitter_token <- oauth1.0_token(oauth_endpoints("twitter"), myapp, as_header = TRUE)
+# Get the necessary OAuth credentials by passing in my keys, and storing as twitter token
+twitter_token <- oauth1.0_token(oauth_endpoints("twitter"), myapp)
 
-# 4. Use API
-req <- GET(
-  "https://api.twitter.com/1.1/statuses/home_timeline.json",
+#############################################
+## Pull Twitter languages into data frame ###
+#############################################
+
+# Pull down the list of of languages used on Twitter, passing in my authentication credentials. 
+twitter_languages <- GET(
+  "https://api.twitter.com/1.1/help/languages.json",
   config(token = twitter_token)
 )
-stop_for_status(req)
-content(req)
 
+# Coerce the lists of lists that's returned into a dataframe by grabbing the content of the GET request, converting it to json, then from json into a dataframe. There may be a way to conver the list of lists to a dataframe directly, but this works fine!
+twitter_languages_df <- twitter_languages %>%
+  content() %>%
+  toJSON() %>%
+  fromJSON()
 
-## Create a list of language codes to loop through
-## Pull list of languages from RTWEET package
+# Write it out to a CSV. We can load it directly next time we run it, without connecting to the API
+write_csv(twitter_languages_df, "twitter_supported_languages.csv")
+
+# Once I'm finished, remove the twitter_token from the environment, cause I'm going to create a new one below. Otherwise there are conflicts. 
+
+rm(twitter_token)
+rm(myapp)
+
+# If I want it for later, for comparison purposes, the RTWEET package has a list of languages from the UN.  
 languages <- langs
 
-## Create a test data frame just for english, so I don't get rate limited while debugging.
-english <- languages %>%
-  filter(alpha == "en")
+#############################################
+###### Connect to RTWEET Package ############
+#############################################
 
-for (language_code in english$alpha) {
+## Create token to authenticate access to Twitter API via TWEETR. Note I'm using a different app this time.
+create_token(
+  app = "language_loop",
+  consumer_key = "Bi9EEczj73nAjX6Ak0U60Obna",
+  consumer_secret = "e62MjCYMaF6oPdrtbbZBExOOzksPtPDKreIhWbr13kQxuFskti",
+  access_token = "4166101-o6ZgayHu0rb7mrjrkT6fyarnjRGLmA6iAaZ3pVrqqH",
+  access_secret = "0ADqQbxcfYLa0TvNjbJoq85VXqORopz5MQwJDiTt2M8o4"
+)
+
+## Loop through 
+
+english <- twitter_languages_df %>%
+  filter(code == "en")
+
+for (language_code in english$code) {
   rt_working <- as_tibble(search_tweets("", n = 10, include_rts = FALSE, lang = language_code, geocode = "51.50,0.15,20mi"))
 }
+
+## Create empty dataframe
+
+lang_loc <- tibble(
+  language_code = "",
+  geocode = "",
+  present = ""
+)
+language_code = "en"
+geocode = "51.50,0.15,20mi"
+hr_test <- hr %>%
+  mutate(language_code = language_code) %>%
+  mutate(geocode = geocode) %>%
+  mutate(present = "not present") %>%
+  select(language_code, geocode, present)
+
+
+## Now, loop through all of the languages in the twitter supported languages. 
+for (language_code in twitter_languages_df$code) {
+  geocode = "51.50,0.15,20mi"
+  rt_working <- as_tibble(search_tweets("", n = 1, include_rts = FALSE, lang = language_code, geocode = geocode))
+  if(nrow(rt_working) > 0) {
+    ## assign(language_code, as_tibble(rt_working))
+    rt_working <- rt_working %>%
+      mutate(language_code = language_code) %>%
+      mutate(geocode = geocode) %>%
+      mutate(present = "present") %>%
+      select(language_code, geocode, present)
+    lang_loc <- bind_rows(lang_loc, rt_working)
+    print(paste0(language_code, ", present"))
+  } else {
+    ## assign(paste0(language_code, "empty"), as_tibble(rt_working))
+    rt_working <- rt_working %>%
+      mutate(language_code = language_code) %>%
+      mutate(geocode = geocode) %>%
+      mutate(present = "not present") %>%
+      select(language_code, geocode, present)
+    lang_loc <- bind_rows(lang_loc, rt_working)
+    print(paste0(language_code, ", blank"))
+  }
+  
+  
+}
+assign(language_code, as_tibble(rt_working))
+
+language_code <- language_code %>%
+  group_by(language_code$lang) %>%
+  summarise(count=n())
 
 ## Actual one
 languages <- langs
