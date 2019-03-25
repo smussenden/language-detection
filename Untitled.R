@@ -8,6 +8,8 @@
 ## install.packages("jsonlite")
 ## install.packages("tidyverse")
 ## install.packages("rtweet")
+## install.packages("stringi")
+
 
 #############################################
 ############### load packages ###############
@@ -17,6 +19,7 @@
 library(httr)
 library(httpuv)
 library(jsonlite)
+library(stringi)
 
 # Rtweet package for easier connection to search API
 library(rtweet)
@@ -53,16 +56,30 @@ twitter_languages <- GET(
   config(token = twitter_token)
 )
 
-# Coerce the lists of lists that's returned into a dataframe by grabbing the content of the GET request, converting it to json, then from json into a dataframe. There may be a way to conver the list of lists to a dataframe directly, but this works fine!
-twitter_languages_df <- twitter_languages %>%
+# Coerce the lists of lists that's returned into a dataframe by grabbing the content of the GET request, converting it to json, then from json into a dataframe. There may be a way to convert the list of lists to a dataframe directly, but this works fine!
+twitter_languages_list_of_lists <- twitter_languages %>%
   content() %>%
   toJSON() %>%
   fromJSON()
 
-glimpse(twitter_languages_df)
+# Turn it into a dataframe. Rename the columns that got stripped when we used the stringi list2matrix function
+
+twitter_languages_dataframe <- as_tibble(stri_list2matrix(twitter_languages_list_of_lists, byrow=FALSE))
+twitter_languages_dataframe <- twitter_languages_dataframe %>%
+  rename(code = V1, name = V2, local_name = V3, status = V4, debug = V5)
+glimpse(twitter_languages_dataframe)
+
+# Twitters. Join to list of supporeted languages, which seem to have more. 
+https://developer.twitter.com/en/docs/tweets/rules-and-filtering/overview/premium-operators
+
+twitter_supported <- read_csv('searchAPI Languages - Sheet1.csv')
+View(twitter_supported)
+
+twitter_languages_merge <- twitter_languages_dataframe %>%
+  full_join(twitter_supported, by = c("code" = "Code"))
 
 # Write it out to a CSV. We can load it directly next time we run it, without connecting to the API
-write_csv(twitter_languages_df, "twitter_supported_languages.csv")
+write.csv(twitter_languages_merge, "twitter_supported_merge.csv")
 
 # Once I'm finished, remove the twitter_token from the environment, cause I'm going to create a new one below. Otherwise there are conflicts. 
 
@@ -71,6 +88,13 @@ rm(myapp)
 
 # If I want it for later, for comparison purposes, the RTWEET package has a list of languages from the UN.  
 languages <- langs
+
+###### Get list of places #####
+
+twitter_languages <- GET(
+  "https://api.twitter.com/1.1/help/languages.json",
+  config(token = twitter_token)
+)
 
 #############################################
 ###### Connect to RTWEET Package ############
@@ -94,6 +118,9 @@ for (language_code in english$code) {
   rt_working <- as_tibble(search_tweets("", n = 10, include_rts = FALSE, lang = language_code, geocode = "51.50,0.15,20mi"))
 }
 
+
+  pa <- as_tibble(search_tweets("", n = 10, include_rts = FALSE, lang = "pa", ))
+
 ## Create empty dataframe to bind in results. 
 
 lang_loc <- tibble(
@@ -107,10 +134,10 @@ lang_loc <- tibble(
 rm(list=ls())
 38.55,68.8
 ## Now, loop through all of the languages in the twitter supported languages. 
-for (language_code in twitter_languages_df$code) {
-  city_name <- "Dushanbe"
-  country_name <- "Tajikistan"
-  geocode <- "38.55,68.80,20mi"
+for (language_code in twitter_languages_merge$code) {
+  city_name <- "London"
+  country_name <- "UK"
+  geocode <- "51.50,0.15,20mi"
   rt_working <- as_tibble(search_tweets("", n = 1, include_rts = FALSE, lang = language_code, geocode = geocode))
   if(nrow(rt_working) > 0) {
     ## assign(language_code, as_tibble(rt_working))
@@ -134,6 +161,8 @@ for (language_code in twitter_languages_df$code) {
     lang_loc <- bind_rows(lang_loc, rt_working)
   }
 }
+
+51.50,0.15,20mi
 
 geocodes <- tibble(
   lat = c("51.50","50.50"),
@@ -183,10 +212,10 @@ for (geocode in geocodes$geostring) {
 
 
 # After for loop finished running, bind it back to twitter_languages dataframe. Unnest it first
-lang_loc_2 <- twitter_languages_df %>%
+lang_loc_2 <- twitter_languages_merge %>%
   unnest() %>%
   right_join(lang_loc, by = c("code" = "language_code")) %>%
-  select(country, city, geocode, name, code, present) %>%
+  select(country, city, geocode, name, Language, code, present) %>%
   arrange(country, city, geocode, name)
 
 
