@@ -59,6 +59,8 @@ twitter_languages_df <- twitter_languages %>%
   toJSON() %>%
   fromJSON()
 
+glimpse(twitter_languages_df)
+
 # Write it out to a CSV. We can load it directly next time we run it, without connecting to the API
 write_csv(twitter_languages_df, "twitter_supported_languages.csv")
 
@@ -92,25 +94,23 @@ for (language_code in english$code) {
   rt_working <- as_tibble(search_tweets("", n = 10, include_rts = FALSE, lang = language_code, geocode = "51.50,0.15,20mi"))
 }
 
-## Create empty dataframe
+## Create empty dataframe to bind in results. 
 
 lang_loc <- tibble(
   language_code = "",
   geocode = "",
-  present = ""
+  present = "",
+  city = "",
+  country = ""
 )
-language_code = "en"
-geocode = "51.50,0.15,20mi"
-hr_test <- hr %>%
-  mutate(language_code = language_code) %>%
-  mutate(geocode = geocode) %>%
-  mutate(present = "not present") %>%
-  select(language_code, geocode, present)
 
-
+rm(list=ls())
+38.55,68.8
 ## Now, loop through all of the languages in the twitter supported languages. 
 for (language_code in twitter_languages_df$code) {
-  geocode = "51.50,0.15,20mi"
+  city_name <- "Dushanbe"
+  country_name <- "Tajikistan"
+  geocode <- "38.55,68.80,20mi"
   rt_working <- as_tibble(search_tweets("", n = 1, include_rts = FALSE, lang = language_code, geocode = geocode))
   if(nrow(rt_working) > 0) {
     ## assign(language_code, as_tibble(rt_working))
@@ -118,22 +118,92 @@ for (language_code in twitter_languages_df$code) {
       mutate(language_code = language_code) %>%
       mutate(geocode = geocode) %>%
       mutate(present = "present") %>%
-      select(language_code, geocode, present)
+      mutate(country = country_name) %>%
+      mutate(city = city_name) %>%
+      select(language_code, geocode, present, country, city)
     lang_loc <- bind_rows(lang_loc, rt_working)
-    print(paste0(language_code, ", present"))
   } else {
     ## assign(paste0(language_code, "empty"), as_tibble(rt_working))
-    rt_working <- rt_working %>%
-      mutate(language_code = language_code) %>%
-      mutate(geocode = geocode) %>%
-      mutate(present = "not present") %>%
-      select(language_code, geocode, present)
+    rt_working <- tibble(
+      language_code = language_code,
+      geocode = geocode,
+      present = "not present",
+      country = country_name,
+      city = city_name
+    )
     lang_loc <- bind_rows(lang_loc, rt_working)
-    print(paste0(language_code, ", blank"))
   }
-  
-  
 }
+
+geocodes <- tibble(
+  lat = c("51.50","50.50"),
+  long = c("0.15","0.10"),
+  radius = c("20mi","10mi"),
+  geostring = ""
+)
+
+geocodes <- geocodes %>%
+  mutate(geostring = paste(lat, long, radius, sep=","))
+
+
+
+## Now, loop through all of the languages in the twitter supported languages.
+## Adding for loop. 
+for (geocode in geocodes$geostring) {
+  for (language_code in twitter_languages_df$code) {
+    print(geocode)
+    city_name <- "London"
+    country_name <- "UK"
+    rt_working <- as_tibble(search_tweets("", n = 1, include_rts = FALSE, lang = language_code, geocode = geocode))
+    if(nrow(rt_working) > 0) {
+      ## assign(language_code, as_tibble(rt_working))
+      rt_working <- rt_working %>%
+        mutate(language_code = language_code) %>%
+        mutate(geocode = geocode) %>%
+        mutate(present = "present") %>%
+        mutate(country = country_name) %>%
+        mutate(city = city_name) %>%
+        select(language_code, geocode, present, country, city)
+      lang_loc <- bind_rows(lang_loc, rt_working)
+    } else {
+      ## assign(paste0(language_code, "empty"), as_tibble(rt_working))
+      rt_working <- tibble(
+        language_code = language_code,
+        geocode = geocode,
+        present = "not present",
+        country = country_name,
+        city = city_name
+      )
+      lang_loc <- bind_rows(lang_loc, rt_working)
+    }
+  }
+  ## print("sleep for five minutes to avoid getting rate limited")
+  ## Sys.sleep(20)
+}
+
+
+# After for loop finished running, bind it back to twitter_languages dataframe. Unnest it first
+lang_loc_2 <- twitter_languages_df %>%
+  unnest() %>%
+  right_join(lang_loc, by = c("code" = "language_code")) %>%
+  select(country, city, geocode, name, code, present) %>%
+  arrange(country, city, geocode, name)
+
+
+df <- enframe(twitter_languages_df)
+
+df <- twitter_languages_df %>%
+  unnest()
+glimpse(df)
+
+twitter_languages_tibble <- data.frame(twitter_languages_df)
+df <- data.frame(matrix(unlist(twitter_languages_df), nrow=length(twitter_languages_df), byrow=T))
+glimpse(twitter_languages_tibble)
+lang_loc_verbose <- lang_loc %>%
+  left_join(twitter_languages_tibble, by = c("language_code" = "code"))
+
+glimpse(lang_loc)
+glimpse(twitter_languages_df)
 assign(language_code, as_tibble(rt_working))
 
 language_code <- language_code %>%
