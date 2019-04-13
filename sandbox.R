@@ -69,7 +69,7 @@ twitter_languages_dataframe <- twitter_languages_dataframe %>%
   rename(code = V1, name = V2, local_name = V3, status = V4, debug = V5)
 glimpse(twitter_languages_dataframe)
 
-# Twitters. Join to list of supporeted languages, which seem to have more. 
+# Twitters. Join to list of supported languages, which seem to have more. 
 https://developer.twitter.com/en/docs/tweets/rules-and-filtering/overview/premium-operators
 
 twitter_supported <- read_csv('searchAPI Languages - Sheet1.csv')
