@@ -297,6 +297,44 @@ check <- full_join(bolivia_census_languages, bolivia_present_languages, by="name
         !is.na(predicted) & is.na(actual) ~ "false positive (may exist as other in census data)",
         ))
 
+check_count <- check %>%
+  group_by(result_type) %>%
+  summarise(count = n())
+
+check_matrix <- tribble(
+  ~x, ~true, ~false,
+  "positive", NA, NA,
+  "negative", NA, NA
+)
+
+check_matrix <- check_matrix %>%
+  mutate(true = case_when(
+    x == "positive" ~ count(falsenegative)
+  ))
+  
+mutate(result_type = case_when(
+  !is.na(predicted) & !is.na(actual) ~ "true positive",  
+  is.na(predicted) & is.na(actual) ~ "true negative",
+  is.na(predicted) & !is.na(actual) ~ "false negative", 
+  !is.na(predicted) & is.na(actual) ~ "false positive (may exist as other in census data)",
+))
+  
+  check %>%
+  mutate(x = "", true = "", false = "") %>%
+  select(x, true, false) %>%
+  
+  
+  
+  
+  
+
+assignments %>%
+  count(title, consensus, wt = count) %>%
+  spread(consensus, n, fill = 0)
+  
+
+
+
 #### CURL
 
 sample <- language_tweets_2 %>%
