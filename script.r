@@ -17,6 +17,7 @@
 ## install.packages("tidyverse")
 ## install.packages("rtweet")
 ## install.packages("stringi")
+install.packages("curl")
 
 #############################################
 ####### Load Required Packages ##############
@@ -33,6 +34,10 @@ library(rtweet)
 
 # Data wrangling
 library(tidyverse)
+
+# Connecting to langscape tool
+library(curl)
+library(httr)
 
 rm(list=ls())
 
@@ -126,7 +131,7 @@ source("twitter_keys/rtweet-keys.R")
 ###### Create Language Search Function ######
 #############################################
 
-## Create an empty dataframe, which will store our results. 
+## Create an empty dataframe, which will store our presence of language results. 
 
 languages_by_location <- tibble(
   language_code = "",
@@ -136,7 +141,16 @@ languages_by_location <- tibble(
   country = ""
 )
 
+languages_by_location <- languages_by_location[-1,]
 
+## Create an empty dataframe, which will store the tweets that flagged the presence of a given language. Pull down one tweet, then remove the values, preserving the columns.  
+
+language_tweets <- as_tibble(search_tweets("", n=1, include_rts=FALSE, geocode="40.71,-74.01,20mi")) 
+
+language_tweets <- language_tweets[-1,]
+
+language_tweets <- language_tweets %>%
+  select(screen_name, text, lang, name, location, description, account_lang, place_name, place_full_name, place_type, country, country_code, everything())
 
 # Define a function called language search that allows you to pass the name of the city, the name of a country, and a circle centered on an latitutde, longitude pair.  The name of the city and country don't actually matter, they're just for inclusion in the dataframe.  What really matters is the geocode. 
 
@@ -146,9 +160,13 @@ language_search <- function(city_name, country_name, geocode) {
     # create a dataframe called rt_working that searches the target geographic area for one tweet with any text that uses the language in question.
     rt_working <- as_tibble(search_tweets("", n = 1, include_rts = FALSE, lang = language_code, geocode = geocode))
     # The dataframe will have either 1 row, if it detects a tweet in a language, or 0 rows, if it fails to find a tweet in that language.   
-    # If it has 1 row, modify rt_working to indicate the language is present.
+    # If it has 1 row, save the tweet in a separate dataframe, and modify rt_working to indicate the language is present.
     if(nrow(rt_working) > 0) {
-      rt_working <<- rt_working 
+      # Bind the tweet content to a dataframe 
+      rt_working <- rt_working %>%
+      select(screen_name, text, lang, name, location, description, account_lang, place_name, place_full_name, place_type, country, country_code)
+      language_tweets <- bind_rows(language_tweets, rt_working)     
+      # Modify the rt_wroking dataframe to indicate presence of language
       rt_working <- rt_working %>%
         mutate(language_code = language_code) %>%
         mutate(geocode = geocode) %>%
@@ -173,8 +191,9 @@ language_search <- function(city_name, country_name, geocode) {
   }
   # After looping through all the languages, this last step is necessary so that the languages_by_location we've modified inside the function (essentially a copy) overwrites the global languages_by_location that exists outside the function. The double angle bracket <<- instead of normal <- for assignment does that. 
   languages_by_location <<- languages_by_location
+  language_tweets <<- language_tweets
+  
 }
-
 
 #############################################
 #### Search for Languages Using Function ####
@@ -185,265 +204,194 @@ language_search <- function(city_name, country_name, geocode) {
 # To find lat and long and a radius, use this tool 
 # https://www.mapdevelopers.com/draw-circle-tool.php
 
-# Wait 10 minutes or so between runs, to avoid rate limit. 
-
 # London
 language_search("London", "UK", "51.50,0.15,20mi")
 
+# Before moving on, check and see how many tweets we can continue collecting before hitting rate limit, and time remaining before rate limit resets (every 15 minutes, 180 tweets max). Build a function called rate_check, then run rate_check.  In the future, could write a function to check if there's time left before rate limit expires, and, if so, move on. 
+
+rate_check <- function() {
+  token <- get_tokens()
+  rate <- rate_limit(token, "search_tweets")
+  View(rate)
+}
+
+rate_check()
+
 # New York
 language_search("New York", "NY", "40.71,-74.01,20mi")
+rate_check()
 
 # Bolivia
-language_search("Whole Country", "Bolivia", "-16.23,-64.73,455mi")
-
-# Bolivia
-language_search("Oruro", "Bolivia", "-17.95,-67.10,20mi")
-
--17.947987,-67.092493
+language_search("LaPaz", "Bolivia", "-16.50,-68.15,20mi")
+rate_check()
 
 # Tajikistan
-language_search("Western", "Tajikistan", "38.67,69.23,69mi")
+language_search("Dushanbe", "Tajikistan", "38.55,68.80,20mi")
+rate_check()
 
-
-languages_by_location <- languages_by_location %>%
-  filter(city != "Western")
-
-# After for loop finished running, bind it back to twitter_languages dataframe. Unnest it first
-languages_by_location2 <- twitter_languages %>%
+# After all location functions run and added to present v not present dataframe, bind it back to twitter_languages dataframe to get language names. 
+languages_by_location_2 <- twitter_languages %>%
   right_join(languages_by_location, by = c("code" = "language_code")) %>%
   select(country, city, geocode, name, code, present) %>%
   arrange(country, city, geocode, name)
 
+# After list of tweets returned by location functions finished running, bind it back to twitter_langugages dataframe to get names.
 
-languages_by_location2 <- twitter_languages %>%
-  unnest() %>%
-  right_join(lang_loc, by = c("code" = "language_code")) %>%
-  select(country, city, geocode, name, code, present) %>%
-  arrange(country, city, geocode, name)
+language_tweets_2 <- language_tweets %>%
+  full_join(twitter_languages, by = c("lang" = "code")) %>%
+  rename(name = name.x, language_name = name.y) %>%
+  select(language_name, lang, text, everything()) %>%
+  filter(!is.na(text))
 
+#############################################
+#### Read in Language on the Web Data #######
+#############################################
 
+bolivia_web <- read_csv("data/web-research/bolivia-web.csv")
+tajikistan_web <- read_csv("data/web-research/tajikistan-web.csv")
+london_web <- read_csv("data/web-research/london-web.csv")
+nyc_web <- read_csv("data/web-research/nyc-web.csv")
 
-## Now, loop through all of the languages in the twitter supported languages.
-## Adding for loop. 
-for (geocode in geocodes$geostring) {
-  for (language_code in twitter_languages_df$code) {
-    print(geocode)
-    city_name <- "London"
-    country_name <- "UK"
-    rt_working <- as_tibble(search_tweets("", n = 1, include_rts = FALSE, lang = language_code, geocode = geocode))
-    if(nrow(rt_working) > 0) {
-      ## assign(language_code, as_tibble(rt_working))
-      rt_working <- rt_working %>%
-        mutate(language_code = language_code) %>%
-        mutate(geocode = geocode) %>%
-        mutate(present = "present") %>%
-        mutate(country = country_name) %>%
-        mutate(city = city_name) %>%
-        select(language_code, geocode, present, country, city)
-      lang_loc <- bind_rows(lang_loc, rt_working)
-    } else {
-      ## assign(paste0(language_code, "empty"), as_tibble(rt_working))
-      rt_working <- tibble(
-        language_code = language_code,
-        geocode = geocode,
-        present = "not present",
-        country = country_name,
-        city = city_name
-      )
-      lang_loc <- bind_rows(lang_loc, rt_working)
-    }
-  }
-  ## print("sleep for five minutes to avoid getting rate limited")
-  ## Sys.sleep(20)
-}
+#############################################
+#### Read in Census Data ####################
+#############################################
 
+bolivia_census <- read_csv("data/census/bolivia-census.csv")
+tajikistan_census <- read_csv("data/census/tajikistan-census.csv")
+london_census <- read_csv("data/census/london-census.csv")
+nyc_census <- read_csv("data/census/nyc-census.csv")
 
+#############################################
+#### Filter out Bolivia Data ################
+#############################################
 
-df <- enframe(twitter_languages_df)
+bolivia_tweet_languages <- languages_by_location_2 %>%
+  filter(country == "Bolivia") %>%
+  filter(city == "LaPaz") %>%
+  select(name, code, present) %>%
+  mutate(source = "twitter")
 
-df <- twitter_languages_df %>%
-  unnest()
-glimpse(df)
+bolivia_web <- bolivia_web %>%
+  mutate(source = "web", present = "present") %>%
+  select(name, code, present, source)
 
-twitter_languages_tibble <- data.frame(twitter_languages_df)
-df <- data.frame(matrix(unlist(twitter_languages_df), nrow=length(twitter_languages_df), byrow=T))
-glimpse(twitter_languages_tibble)
-lang_loc_verbose <- lang_loc %>%
-  left_join(twitter_languages_tibble, by = c("language_code" = "code"))
+bolivia_merged <- bind_rows(bolivia_tweet_languages, bolivia_web)
 
-glimpse(lang_loc)
-glimpse(twitter_languages_df)
-assign(language_code, as_tibble(rt_working))
+# Check against merged data
 
-language_code <- language_code %>%
-  group_by(language_code$lang) %>%
-  summarise(count=n())
+bolivia_present_languages <- bolivia_merged %>%
+  filter(present == "present") %>%
+  distinct(name) %>%
+  mutate(predicted = "predicted to exist")
 
-## Actual one
-languages <- langs
-## Filter out languages that don't have an alpha value
-languages <- langs %>%
-  filter(!is.na(alpha)) %>%
-  head(20)
+bolivia_census_languages <- bolivia_census %>%
+  select(name) %>%
+  mutate(actual = "actually exists")
 
-### For loop through languages.  I'm getting rate limited, so need to do this in chunks. 
-for (language_code in languages$alpha) {
-  rt_working <- as_tibble(search_tweets("", n = 1, include_rts = FALSE, lang = language_code, geocode = "51.50,0.15,20mi"))
-  assign(language_code, as_tibble(rt_working))
-}
+check <- full_join(bolivia_census_languages, bolivia_present_languages, by="name") %>%
+  select(name, predicted, actual) %>%
+  mutate(result_type = case_when(
+        !is.na(predicted) & !is.na(actual) ~ "true positive",  
+        is.na(predicted) & is.na(actual) ~ "true negative",
+        is.na(predicted) & !is.na(actual) ~ "false negative", 
+        !is.na(predicted) & is.na(actual) ~ "false positive (may exist as other in census data)",
+        ))
 
-### Bind them all together.  I cannot for the life of me figure out how to automate this shit, none of the rowbind functions are working, so fuck it, let's do it manually.
-language_code_list <- languages %>%
-  mutate(code_list = paste0(alpha,",")) %>%
-  select(code_list)
+#### CURL
 
-language_code_list <- (noquote(language_code_list$code_list))
-View(language_code_list)  
-master_data_frame <-bind_rows(list(aa,	ab,	af,	ak,	sq,	am,	ar,	an,	hy,	as,	av,	ae,	ay,	az,	ba,	bm,	eu, be,	bn,	bh,	bi,	bs,	br,	bg,	my,	ca,	ch,	ce,	zh,	cu,	cv,	kw,	co,	cr, cs,	da,	dv,	nl,	dz,	en,	eo,	et,	ee,	fo,	fj,	fi,	fr,	fy,	ff,	ka,	de, gd,	ga,	gl,	gv,	el,	gn,	gu,	ht,	ha,	he,	hz,	hi,	ho,	hr,	hu,	ig,	is, io,	ii,	iu,	ie,	ia,	id,	ik,	it,	jv,	ja,	kl,	kn,	ks,	kr,	kk,	km,	ki, rw,	ky,	kv,	kg,	ko,	kj,	ku,	lo,	la,	lv,	li,	ln,	lt,	lb,	lu,	lg,	mk, mh,	ml,	mi,	mr,	ms,	mg,	mt,	mn,	na,	nv,	nr,	nd,	ng,	ne,	nn,	nb,	no, ny,	oc,	oj,	or,	om,	os,	pa,	fa,	pi,	pl,	pt,	ps,	qu,	rm,	ro,	rn,	ru, sg,	sa,	si,	sk,	sl,	se,	sm,	sn,	sd,	so,	st,	es,	sc,	sr,	ss,	su,	sw, sv,	ty,	ta,	tt,	te,	tg,	tl,	th,	bo,	ti,	to,	tn,	ts,	tk,	tr,	tw,	ug, uk,	ur,	uz,	ve,	vi,	vo,	cy,	wa,	wo,	xh,	yi,	yo,	za,	zu))
+sample <- language_tweets_2 %>%
+  filter(language_name == 'French', screen_name == 'TPWKffs')
+
+sample_text <- str_replace_all(sample$text, "\\ ", "%20")
 
 
-rt_working_2 <- rt
-rt_working_3 <- rt
-for (language_code in languages$alpha) {
-  ### Get tweets and save as tibble code here
-  ### Paste into data frames
-  assign(language_code, as_tibble(rt_working_2))
-  ### Paste in
-  ###new <- bind_rows(rt_working_3, data.frame(language_code), .id="id")
-}
+sample_text <- "When%20examining%20the%20scores,%20the%20difference%20in%20score%20between%20languages%20is%20a%20guide%20to%20the%20certainty%20of%20the%20match.%20For%20example,%20if%20the%20top%20score%20is%20twice%20as%20high%20as%20the%20second%20score,%20the%20first%20language%20identified%20is%20probably%20correct.%20If%20the%20scores%20for%20the%20suggested%20languages%20are%20similar,%20this%20may%20be%20because%20the%20languages%20are%20closely%20related,%20but%20more%20commonly%20suggests%20that%20the%20algorithm%20did%20not%20find%20a%20good%20match"
+langscape <- "http://langscape.umd.edu/php/LID_Exec.php?sampleText="
+post_url <- paste0(langscape, sample_text)
+test <- POST(post_url)
+test2 <- content(test, as = "text")
+test3 <- enframe(test2)
+test3 <- test3 %>%
+  separate(value, sep="\\^", into=c("a","b","c","d","e"))
+test4 <- test3 %>%
+  gather()
+test5 <- test4 %>%
+  filter(key != "name")
+test6 <- test5 %>%
+  separate(value, sep="\\|", into=c("source1","source2","score")) %>%
+  mutate(language_code = str_sub(source1, 1,3)) %>%
+  select(key, language_code, score, source2, -source1)
 
-new<-bind_rows(noquote(dataframe_list))
+ mutate(value = str_replace(value,"\\^","&"))
 
-
-new <- bind_rows(dataframe_list)
-
-### Create a list of dataframes
-dataframe_list <- list(languages$alpha)
-bind_rows(dataframe_list)
-big_old_frame <- rbindlist(dataframe_list)
-big_old_frame <- do.call(rbind, dataframe_list)
-
-library(data.table)
-> 
-  > head(rbindlist(data)
-
-
-for (language_code in languages$alpha) {
-    rt_working <- as_tibble(search_tweets("", n = 100, include_rts = FALSE, lang = language_code, geocode = "51.50,0.15,20mi"))
-}
-
-# Save working news URLs to csv files in groups of 100
-write_csv(compile_urls("https://www.rt.com/news/", 1, 100), "data/rt_newsURLs-1.csv") # first 100
-for(i in 1:5){ # 200-600
-  filename <- paste0("data/rt_newsURLs-", i+1, ".csv", "")
-  start <- i*100 +1
-  end <- (i+1)*100
+test6 <- list(test2)
+str_split(test6,"^")
+print(test2)
+test3 <- enframe(test2)
+test4 <- test3 %>%
+  separate(value, sep="/^", into = c("a", "b", "c", "d", "e"))
+test3$value
+test4 <- test3 %>%
   
-  write_csv(compile_urls("https://www.rt.com/news/", start, end), filename)
-}
+  
+row
+  str_replace(test3$value,'^', '!') %>%
+  str_split(test3$value, '!')
+  separate(value, c("a","b","c","d","e"), sep="|")
+
+  
+  
+  
+
+test <- POST("http://langscape.umd.edu/php/LID_Exec.php", body="sampleText=When examining the scores, the difference in score between languages is a guide to the certainty of the match. For example, if the top score is twice as high as the second score, the first language identified is probably correct. If the scores for the suggested languages are similar, this may be because the languages are closely related, but more commonly suggests that the algorithm did not find a good match", encode = "form")
 
 
-language_code <- "en"
-search_tweet_function <- function(language_code) {
-  search_tweets("", n = 100, include_rts = FALSE, lang = glue(' {language_code} '), geocode = "51.50,0.15,20mi")
-}
+
+test_2 <- as_tibble(content(test, as="parsed"))
 
 
-## London
-
-## Test connection
-alpha <- "en"
-rt <- search_tweets(
-  "", n = 100, include_rts = FALSE, lang = alpha, geocode = "51.50,0.15,20mi"
+GET("http://langscape.umd.edu/php/LID_Exec.php", verbose())
+library(httr)
+login <- list(
+  email = "login",
+  password = "password"
+  submit = "Login!"
 )
-rt_map <- map(lang_vector, alpha)
-row_bind
+res <- POST("http://kenpom.com/handlers/login_handler.php", body = login, encode = "form", verbose())
+team <- GET("http://kenpom.com/team.php?team=Rice", verbose())
 
-## Define my search tweet function for London
-language_code <- "en"
-search_tweet_function <- function(language_code) {
-  search_tweets("", n = 100, include_rts = FALSE, lang = glue(' {language_code} '), geocode = "51.50,0.15,20mi")
-}
+con <- curl("http://langscape.umd.edu/php/LID_Exec.php")
+readLines(con)
+curl_options()
 
-search_tweet_function(en)
 
-name <- "Fred"
-age <- 50
-anniversary <- as.Date("1991-10-12")
-glue('
-     \"My name is {name}
-     my age next year is {age + 1}
-     my anniversary is {format(anniversary, "%A, %B %d, %Y")}
-     ')
+# Posting multipart
+h <- new_handle()
+handle_setform(h,
+               foo = "blabla",
+               bar = charToRaw("boeboe"),
+               iris = form_data(serialize(iris, NULL), "application/rda"),
+               description = form_file(system.file("DESCRIPTION")),
+               logo = form_file(file.path(R.home('doc'), "html/logo.jpg"), "image/jpeg")
+)
+req <- curl_fetch_memory("https://eu.httpbin.org/post", handle = h)
+
+  mutate(false_positive, false_negative, true_positive, true_negative)
   
-eval(quote(sean))
-
-## Other
-for (i in lang_vector) {
-  rt <- search_tweets(
-    "", n = 100, include_rts = FALSE, lang = lang_vector, geocode = "51.50,0.15,20mi"
-  )
-}
-
-
-
-
-
--- Idea is to use the search API to take a given location and loop through all of the languages Twitter recognizes on its platform.  If a tweet is returned in that language for a given location, then we create a column that classifies that language as existing in that location.  Ultimately we want four data frames or CSVs of each location, with one row per language that Twitter includes in its list of supported languages and a classification of Y or N whether tweets were found in that location. 
-
-### To Start
-Connect to Twitter APi
-
-
-
-
-
-
-https://github.com/TheSiddy/INST737Capstone
-
-"""
-Created on Mon Mar  4 02:37:41 2019
-@author: TheSiddy
-"""
-
-import tweepy
-from tweepy import Stream
-from tweepy import OAuthHandler
-import json
-
-consumer_key="Nv0UJjhuhJXAnDNuUl3Rr0fwA"
-consumer_secret="m4vHuXoh3YQ3rFJt51bKg3N4DncByrKxFVt3nwMyijRrfkQQZF"
-access_token="877892050124976128-E8Fws8Yxn1g4cwQWX7efJAcdv3iYWoJ"
-access_secret="CQWKjZZXsIXMQ9pU4tgafNJUAb5ILxMBC0Jk4nUn3SMAi"
-
-auth = OAuthHandler(consumer_key, consumer_secret)
-auth.set_access_token(access_token, access_secret)
-
-api = tweepy.API(auth)
-@classmethod
-def parse(cls, api, raw):
-  status = cls.first_parse(api, raw)
-setattr(status, 'json', json.dumps(raw))
-return status
-
-# Status() is the data model for a tweet
-tweepy.models.Status.first_parse = tweepy.models.Status.parse
-tweepy.models.Status.parse = parse
-class MyListener(tweepy.StreamListener):
+  library(dplyr) # >= 0.7.0
+  mtcars %>% 
+    mutate(cg = case_when(carb <= 2 ~ "low",
+                          carb > 2  ~ "high"))  
   
-  def on_data(self, data):
-  try:
-  with open('FILENAME.json', 'a') as f:
-  f.write(data)
-return True
-except BaseException as e:
-  print("Error on_data: %s" % str(e))
-return True
+  full_join(bolivia_census, bolivia_merged, by = "name")
 
-def on_error(self, status):
-  print(status)
-return True
+  mutate(gradebook, letter = ifelse(grade %in% 60:69, "D",
+                                    ifelse(grade %in% 70:79, "C",
+                                           ifelse(grade %in% 80:89, "B",
+                                                  ifelse(grade %in% 90:99, "A", "F")))))  
+  
+  
 
-#Set the hashtag to be searched
-twitter_stream = Stream(auth, MyListener())
-twitter_stream.filter(track=['dog'])
+
+
+
