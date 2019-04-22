@@ -135,9 +135,9 @@ rm(list=ls())
 38.55,68.8
 ## Now, loop through all of the languages in the twitter supported languages. 
 for (language_code in twitter_languages_merge$code) {
-  city_name <- "London"
-  country_name <- "UK"
-  geocode <- "51.50,0.15,20mi"
+  city_name <- "New York"
+  country_name <- "NY"
+  geocode <- "40.73,-73.94,20mi" 
   rt_working <- as_tibble(search_tweets("", n = 1, include_rts = FALSE, lang = language_code, geocode = geocode))
   if(nrow(rt_working) > 0) {
     ## assign(language_code, as_tibble(rt_working))
@@ -161,6 +161,8 @@ for (language_code in twitter_languages_merge$code) {
     lang_loc <- bind_rows(lang_loc, rt_working)
   }
 }
+
+write_csv(lang_loc,"ny.csv")
 
 51.50,0.15,20mi
 
