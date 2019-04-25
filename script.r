@@ -17,7 +17,7 @@
 ## install.packages("tidyverse")
 ## install.packages("rtweet")
 ## install.packages("stringi")
-install.packages("curl")
+## install.packages("curl")
 
 #############################################
 ####### Load Required Packages ##############
@@ -38,8 +38,10 @@ library(tidyverse)
 # Connecting to langscape tool
 library(curl)
 library(httr)
+library(openxlsx)
 
-rm(list=ls())
+
+# For Debugging rm(list=ls())
 
 #############################################
 ###### Connect to Twitter API with HTTR #####
@@ -229,6 +231,31 @@ rate_check()
 language_search("Dushanbe", "Tajikistan", "38.55,68.80,20mi")
 rate_check()
 
+language_tweets_df <- language_tweets %>%
+  select_if(~!is.list(.))
+
+
+write.csv(language_tweets_df, "language_tweets.csv")
+
+glimpse(language_tweets)
+
+wb <- createWorkbook("workbook")
+# Create four empty Excel worksheets in Workbook
+addWorksheet(wb, "tweets")
+# Write aggregated dataframes to corresponding worksheets
+writeData(wb, sheet = 1, language_tweets_df)
+
+saveWorkbook(wb, "tweets.xlsx", overwrite = TRUE)
+write_csv(twitter_languages, "twitter_languages.csv")
+writeData(wb, sheet = 2, temp_day)
+writeData(wb, sheet = 3, temp_hour)
+writeData(wb, sheet = 4, temp_minute)
+# Create folder in output files 
+folder <- paste0("output_files/", deparse(substitute(person_location)))
+dir.create(path = folder)
+excel_filename <- paste0("output_files/", deparse(substitute(person_location)),"/",  deparse(substitute(person_location)), "_", date(now()), "_temp_means.xlsx")
+
+
 # After all location functions run and added to present v not present dataframe, bind it back to twitter_languages dataframe to get language names. 
 languages_by_location_2 <- twitter_languages %>%
   right_join(languages_by_location, by = c("code" = "language_code")) %>%
@@ -243,6 +270,19 @@ language_tweets_2 <- language_tweets %>%
   select(language_name, lang, text, everything()) %>%
   filter(!is.na(text))
 
+#### Parse text 
+language_tweets_3 <- language_tweets 
+
+language_tweets_3$text <- plain_tweets(language_tweets_3$text)
+
+language_tweets_3 <- language_tweets_3 %>%
+  mutate(text = str_replace_all(text, "(?<=^|\\s)@\\w+","")) %>%
+  mutate(text = str_replace_all(text, "(?<=^|\\s)#\\w+","")) %>%
+  mutate(text = str_replace_all(text, "(?<=^|\\s)t.co\\w+",""))
+clean_tweets()  
+  
+
+str_replace(string, pattern, replacement)
 #############################################
 #### Read in Language on the Web Data #######
 #############################################
@@ -332,7 +372,6 @@ assignments %>%
   count(title, consensus, wt = count) %>%
   spread(consensus, n, fill = 0)
   
-
 
 
 #### CURL
