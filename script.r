@@ -39,6 +39,8 @@ library(tidyverse)
 library(curl)
 library(httr)
 library(openxlsx)
+# install.packages('qdapRegex')
+library(qdapRegex)
 
 
 # For Debugging rm(list=ls())
@@ -231,29 +233,103 @@ rate_check()
 language_search("Dushanbe", "Tajikistan", "38.55,68.80,20mi")
 rate_check()
 
+
+######################################
+#### Write out DF of Language Tweets##
+######################################
+
+# Remove List Columns before piping to Excel
 language_tweets_df <- language_tweets %>%
   select_if(~!is.list(.))
 
-
-write.csv(language_tweets_df, "language_tweets.csv")
-
-glimpse(language_tweets)
-
+# Create empty Excel workbook 
 wb <- createWorkbook("workbook")
-# Create four empty Excel worksheets in Workbook
+
+# Add an empty worksheet
 addWorksheet(wb, "tweets")
-# Write aggregated dataframes to corresponding worksheets
+
+# Write dataframe to worksheet
 writeData(wb, sheet = 1, language_tweets_df)
 
+# Save Workbook
 saveWorkbook(wb, "tweets.xlsx", overwrite = TRUE)
-write_csv(twitter_languages, "twitter_languages.csv")
-writeData(wb, sheet = 2, temp_day)
-writeData(wb, sheet = 3, temp_hour)
-writeData(wb, sheet = 4, temp_minute)
-# Create folder in output files 
-folder <- paste0("output_files/", deparse(substitute(person_location)))
-dir.create(path = folder)
-excel_filename <- paste0("output_files/", deparse(substitute(person_location)),"/",  deparse(substitute(person_location)), "_", date(now()), "_temp_means.xlsx")
+
+#####################################
+### Check results of language Tweets# 
+#####################################
+
+# After list of tweets returned by location functions finished running, bind it back to twitter_langugages dataframe to get names.
+
+language_tweets_copy <- language_tweets %>%
+  full_join(twitter_languages, by = c("lang" = "code")) %>%
+  rename(name = name.x, language_name = name.y) %>%
+  select(language_name, lang, text, everything()) %>%
+  filter(!is.na(text))
+
+#### Parse text 
+language_tweets_copy <- language_tweets_copy %>%
+  mutate(text = str_replace_all(text,
+                                pattern=regex("(www|https?[^\\s]+)"),
+                                replacement = "")) %>% 
+  mutate(text = rm_hash(text)) %>%
+  mutate(text = rm_url(text)) %>%
+  mutate(text = rm_twitter_url(text)) %>%
+  mutate(unique_id = rownames(language_tweets_copy)) %>%
+  select(unique_id, everything())
+
+#### Pipe out to Langscape ID Tool
+
+# Select only columns we need
+language_tweets_simple <- language_tweets_copy %>%
+  select(unique_id, language_name, lang, text)
+# For now, select one row
+sample <- language_tweets_simple %>%
+  filter(unique_id == 1)
+# Create a copy of tweet text with %20 instead of spaces, for passing through URL string.
+sample <- sample %>%
+  mutate(encoded_text = str_replace_all(sample$text, "\\ ", "%20"))
+# Define variables to build url with query string for connecting to langscape tool langscape <- "http://langscape.umd.edu/php/LID_Exec.php?sampleText="
+post_url <- paste0(langscape, sample$encoded_text)
+
+# Using HTTR, post the url to the langscape tool 
+post_langscape <- POST(post_url)
+
+# Convert the response from a list to dataframe 
+response_langscape <- enframe(content(post_langscape, as = "text"))
+
+# split the langscape language id response scores into a dataframe, and just keep the language code for the top response.
+
+response_langscape <- response_langscape %>%
+  select(-name) %>%
+  separate(value, sep="\\^", into=c("a","b","c","d","e")) %>%
+  gather() %>%
+  separate(value, sep="\\|", into=c("source1","source2","score")) %>%
+  mutate(language_code = str_sub(source1, 1,3)) %>%
+  select(language_code, score) %>%
+  arrange(desc(score)) %>%
+  slice(1) %>%
+  select(language_code)
+
+# bind it back to the dataframe in question
+  
+
+
+mutate(value = str_replace(value,"\\^","&"))
+
+test6 <- list(test2)
+str_split(test6,"^")
+print(test2)
+test3 <- enframe(test2)
+test4 <- test3 %>%
+  separate(value, sep="/^", into = c("a", "b", "c", "d", "e"))
+test3$value
+test4 <- test3 %>%
+  
+  
+  row
+str_replace(test3$value,'^', '!') %>%
+  str_split(test3$value, '!')
+separate(value, c("a","b","c","d","e"), sep="|")
 
 
 # After all location functions run and added to present v not present dataframe, bind it back to twitter_languages dataframe to get language names. 
@@ -262,27 +338,12 @@ languages_by_location_2 <- twitter_languages %>%
   select(country, city, geocode, name, code, present) %>%
   arrange(country, city, geocode, name)
 
-# After list of tweets returned by location functions finished running, bind it back to twitter_langugages dataframe to get names.
 
-language_tweets_2 <- language_tweets %>%
-  full_join(twitter_languages, by = c("lang" = "code")) %>%
-  rename(name = name.x, language_name = name.y) %>%
-  select(language_name, lang, text, everything()) %>%
-  filter(!is.na(text))
 
-#### Parse text 
-language_tweets_3 <- language_tweets 
 
-language_tweets_3$text <- plain_tweets(language_tweets_3$text)
 
-language_tweets_3 <- language_tweets_3 %>%
-  mutate(text = str_replace_all(text, "(?<=^|\\s)@\\w+","")) %>%
-  mutate(text = str_replace_all(text, "(?<=^|\\s)#\\w+","")) %>%
-  mutate(text = str_replace_all(text, "(?<=^|\\s)t.co\\w+",""))
-clean_tweets()  
-  
 
-str_replace(string, pattern, replacement)
+
 #############################################
 #### Read in Language on the Web Data #######
 #############################################
