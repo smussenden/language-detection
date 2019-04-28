@@ -17,7 +17,7 @@
 ## install.packages("tidyverse")
 ## install.packages("rtweet")
 ## install.packages("stringi")
-install.packages("curl")
+## may not need install.packages("curl")
 
 #############################################
 ####### Load Required Packages ##############
@@ -36,7 +36,7 @@ library(rtweet)
 library(tidyverse)
 
 # Connecting to langscape tool
-library(curl)
+# may not needlibrary(curl)
 library(httr)
 
 rm(list=ls())
@@ -199,6 +199,8 @@ language_search <- function(city_name, country_name, geocode) {
 #### Search for Languages Using Function ####
 #############################################
 
+
+
 # language_search(city_name, country_name, geocode) takes three arguments. Each argument must be in quotes. city_name and country_name aren't actually used in the search, they're just there for the output dataframe. geocode must be in a specific format. Latitude and Longitude of specific point, followed by radius around that point in miles."51.50,0.15,20mi". This is finicky. No spaces. 
 
 # To find lat and long and a radius, use this tool 
@@ -228,6 +230,135 @@ rate_check()
 # Tajikistan
 language_search("Dushanbe", "Tajikistan", "38.55,68.80,20mi")
 rate_check()
+
+
+##############################################
+####### Check Tweets Against Langscape #######
+##############################################
+install.packages("qdapRegex")
+library(qdapRegex)
+# Make a working copy of language tweets
+language_tweets_copy <- language_tweets
+
+# Clean up tweets 
+language_tweets_copy <- language_tweets_copy %>% 
+  mutate(text = str_replace_all(text, 
+                                pattern=regex("(www|https?[^\\s]+)"), 
+                                replacement = "")) %>%
+  mutate(text = rm_hash(text)) %>%
+  mutate(text = rm_url(text)) %>%
+  mutate(text = rm_twitter_url(text)) %>%
+  mutate(text = str_replace(text,pattern="\@",replacement="") )
+language_tweets_copy$text <- plain_tweets_2(language_tweets_copy$text)
+
+
+
+
+
+#get rid of unnecessary spaces
+clean_tweet <- str_replace_all(clean_tweet," "," ")
+# Get rid of URLs
+clean_tweet <- str_replace_all(clean_tweet, "http://t.co/[a-z,A-Z,0-9]*{8}","")
+# Take out retweet header, there is only one
+clean_tweet <- str_replace(clean_tweet,"RT @[a-z,A-Z]*: ","")
+# Get rid of hashtags
+clean_tweet <- str_replace_all(clean_tweet,"#[a-z,A-Z]*","")
+# Get rid of references to other screennames
+clean_tweet <- str_replace_all(clean_tweet,"@[a-z,A-Z]*","")   
+
+  select(text, text_2, text_3, everything())
+           
+           "")
+  select(text, text_2, everything())
+
+language_tweets_copy$text <- plain_tweets_2(language_tweets_copy$text)
+  
+plain_tweets_2 <- function(x) {
+    if (is.data.frame(x)) {
+      if (has_name_(x, "text")) {
+        x$text <- plain_tweets_(x$text)
+      } else {
+        stop("Couldn't find \"text\" variable.", call. = FALSE)
+      }
+    } else if (is.list(x)) {
+      if (has_name_(x, "text")) {
+        x$text <- plain_tweets_(x$text)
+      } else {
+        stop("Couldn't find \"text\" variable.", call. = FALSE)
+      }
+    } else {
+      x <- plain_tweets_(x)
+    }
+    x
+  }
+  
+  plain_tweets_2 <- function(x) {
+    if (is.factor(x)) {
+      x <- as.character(x)
+    }
+    stopifnot(is.character(x))
+    x <- rm_links(x)
+    x <- rm_linebreaks(x)
+    x <- rm_fancy_spaces(x)
+    x <- rm_fancy_apostrophes(x)
+    x <- rm_amp(x)
+    trim_ws(x)
+  }
+  
+  
+  ##----------------------------------------------------------------------------##
+  ##                  remove/replace tricky chars and URL links                 ##
+  ##----------------------------------------------------------------------------##
+  
+  rm_fancy_apostrophes <- function(x) gsub(intToUtf8(8217), "'", x)
+  
+  rm_fancy_spaces <- function(x) {
+    gsub("\\t", " ", gsub(intToUtf8(65039), " ", x))
+  }
+  
+  rm_links <- function(x) {
+    x <- gsub("\\s?https?[[:graph:]]", "", x)
+    gsub("\\s?\\b[[:graph:]]+(\\.com|\\.net|\\.gov|\\.io|\\.org)\\b", "", x)
+  }
+  
+  rm_linebreaks <- function(x, y = " ") {
+    gsub("\\n", y, x)
+  }
+  
+  enc2ascii <- function(x, y = "") {
+    iconv(x, to = "ascii", sub = y)
+  }
+  
+  rm_amp <- function(x, y = "&") {
+    if (is.null(y)) {
+      y <- ""
+    }
+    gsub("&amp;", y, x)
+  }
+  
+  trim_ws <- function(x) {
+    x <- gsub("[ ]{2,}", " ", x)
+    gsub("^[ ]+|[ ]+$", "", x)
+  }  
+  
+  
+  
+  
+
+View(language_tweets_copy)
+
+trump_tokens <- trump_twitter %>% 
+  mutate(text = str_replace_all(text, 
+                                pattern=regex("(www|https?[^\\s]+)"), 
+                                replacement = "")) %>% #rm urls
+  mutate(text = str_replace_all(text,
+                                pattern = "[[:digit:]]",
+                                replacement = "")) %>% 
+  unnest_tokens(tokens, text) %>% #tokenize
+  mutate(tokens = vec_hunspell_stem(tokens)) %>% 
+  filter(!(tokens %in% stop_words$word)) #rm stopwords
+
+#############
 
 # After all location functions run and added to present v not present dataframe, bind it back to twitter_languages dataframe to get language names. 
 languages_by_location_2 <- twitter_languages %>%
@@ -290,16 +421,128 @@ bolivia_census_languages <- bolivia_census %>%
 
 check <- full_join(bolivia_census_languages, bolivia_present_languages, by="name") %>%
   select(name, predicted, actual) %>%
-  mutate(result_type = case_when(
-        !is.na(predicted) & !is.na(actual) ~ "true positive",  
-        is.na(predicted) & is.na(actual) ~ "true negative",
-        is.na(predicted) & !is.na(actual) ~ "false negative", 
-        !is.na(predicted) & is.na(actual) ~ "false positive (may exist as other in census data)",
-        ))
+  mutate(result_type_tf = case_when(
+        !is.na(predicted) & !is.na(actual) ~ "true",  
+        is.na(predicted) & is.na(actual) ~ "true",
+        is.na(predicted) & !is.na(actual) ~ "false", 
+        !is.na(predicted) & is.na(actual) ~ "false")) %>%
+     mutate(result_type_pn = case_when(
+       !is.na(predicted) & !is.na(actual) ~ "positive",  
+       is.na(predicted) & is.na(actual) ~ "negative",
+       is.na(predicted) & !is.na(actual) ~ "negative", 
+       !is.na(predicted) & is.na(actual) ~ "positive"))
 
 check_count <- check %>%
-  group_by(result_type) %>%
-  summarise(count = n())
+  group_by(result_type_tf, result_type_pn) %>%
+  summarise(count = n()) %>%
+  order_by(desc(result_type_pn))
+
+#############################################
+#### Filter out NEW YORK Data ################
+#############################################
+
+nyc_tweet_languages <- languages_by_location_2 %>%
+  filter(country == "NY") %>%
+  select(name, code, present) %>%
+  mutate(source = "twitter")
+
+nyc_web <- nyc_web %>%
+  filter(source_type != "public library catalog") %>%
+  mutate(source = "web", present = "present") %>%
+  select(name, code, present, source) 
+
+# Filter out library catalog data 
+
+nyc_merged <- bind_rows(nyc_tweet_languages, nyc_web)
+
+# Check against merged data
+
+nyc_present_languages <- nyc_merged %>%
+  filter(present == "present") %>%
+  distinct(name) %>%
+  mutate(predicted = "predicted to exist")
+
+nyc_census_languages <- nyc_census %>%
+  select(name) %>%
+  mutate(actual = "actually exists")
+
+check <- full_join(nyc_census_languages, nyc_present_languages, by="name") %>%
+  select(name, predicted, actual) %>%
+  mutate(result_type_tf = case_when(
+    !is.na(predicted) & !is.na(actual) ~ "true",  
+    is.na(predicted) & is.na(actual) ~ "true",
+    is.na(predicted) & !is.na(actual) ~ "false", 
+    !is.na(predicted) & is.na(actual) ~ "false")) %>%
+  mutate(result_type_pn = case_when(
+    !is.na(predicted) & !is.na(actual) ~ "positive",  
+    is.na(predicted) & is.na(actual) ~ "negative",
+    is.na(predicted) & !is.na(actual) ~ "negative", 
+    !is.na(predicted) & is.na(actual) ~ "positive"))
+
+check_count <- check %>%
+  group_by(result_type_tf, result_type_pn) %>%
+  summarise(count = n()) %>%
+  order_by(desc(result_type_pn))
+
+
+#############################################
+#### Filter out TAJIKISTAN Data ################
+#############################################
+
+tajikistan_tweet_languages <- languages_by_location_2 %>%
+  filter(country == "Tajikistan") %>%
+  select(name, code, present) %>%
+  mutate(source = "twitter")
+
+tajikistan_web <- tajikistan_web %>%
+  mutate(source = "web", present = "present") %>%
+  select(name, code, present, source)
+
+tajikistan_merged <- bind_rows(tajikistan_tweet_languages, tajikistan_web)
+
+# Check against merged data
+
+tajikistan_present_languages <- tajikistan_merged %>%
+  filter(present == "present") %>%
+  distinct(name) %>%
+  mutate(predicted = "predicted to exist")
+
+tajikistan_census_languages <- tajikistan_census %>%
+  select(name) %>%
+  mutate(actual = "actually exists")
+
+check <- full_join(tajikistan_census_languages, tajikistan_present_languages, by="name") %>%
+  select(name, predicted, actual) %>%
+  mutate(result_type_tf = case_when(
+    !is.na(predicted) & !is.na(actual) ~ "true",  
+    is.na(predicted) & is.na(actual) ~ "true",
+    is.na(predicted) & !is.na(actual) ~ "false", 
+    !is.na(predicted) & is.na(actual) ~ "false")) %>%
+  mutate(result_type_pn = case_when(
+    !is.na(predicted) & !is.na(actual) ~ "positive",  
+    is.na(predicted) & is.na(actual) ~ "negative",
+    is.na(predicted) & !is.na(actual) ~ "negative", 
+    !is.na(predicted) & is.na(actual) ~ "positive"))
+
+check_count <- check %>%
+  group_by(result_type_tf, result_type_pn) %>%
+  summarise(count = n()) %>%
+  order_by(desc(result_type_pn))
+
+
+
+check_count <- check %>%
+  group_by(result_type_tf, result_type_pn) %>%
+  summarise(count = n()) %>%
+  ungroup() %>%
+  add_row(check_count, result_type_tf = "true", result_type_pn = "negative", count="")
+
+check_count <- check_count %>%
+  add_row(check_count, result_type_tf = "true", result_type_pn = "negative", count="")
+
+
+check_count_spread <- check_count %>%
+  spread(result_type_pn, result_type_tf)
 
 check_matrix <- tribble(
   ~x, ~true, ~false,
@@ -309,8 +552,8 @@ check_matrix <- tribble(
 
 check_matrix <- check_matrix %>%
   mutate(true = case_when(
-    x == "positive" ~ count(falsenegative)
-  ))
+    x == "positive" ~ (filter(check_count$result_type = "true positive") %>% check_count$count))
+  )
   
 mutate(result_type = case_when(
   !is.na(predicted) & !is.na(actual) ~ "true positive",  
@@ -335,13 +578,17 @@ assignments %>%
 
 
 
-#### CURL
-
+#### HTTR -- MAYBE JUST RUN THIS ON LANGUAGUES LESS USED ON TWITTER> 
+#### SEND TESS A LIST OF TWEETS...WHERE TWITTER IS GOING WRONG.  
+  
 sample <- language_tweets_2 %>%
-  filter(language_name == 'French', screen_name == 'TPWKffs')
+  filter(language_name == 'French', screen_name == "sarahemnt")
+
+sample_text <- " يم ڪيو ايم: متان ڀائو وارن جي پٺِيان لڳا آه ي"
 
 sample_text <- str_replace_all(sample$text, "\\ ", "%20")
 
+يم ڪيو ايم: متان ڀائو وارن جي پٺِيان لڳا آهيو!
 
 sample_text <- "When%20examining%20the%20scores,%20the%20difference%20in%20score%20between%20languages%20is%20a%20guide%20to%20the%20certainty%20of%20the%20match.%20For%20example,%20if%20the%20top%20score%20is%20twice%20as%20high%20as%20the%20second%20score,%20the%20first%20language%20identified%20is%20probably%20correct.%20If%20the%20scores%20for%20the%20suggested%20languages%20are%20similar,%20this%20may%20be%20because%20the%20languages%20are%20closely%20related,%20but%20more%20commonly%20suggests%20that%20the%20algorithm%20did%20not%20find%20a%20good%20match"
 langscape <- "http://langscape.umd.edu/php/LID_Exec.php?sampleText="
