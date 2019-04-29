@@ -7,7 +7,7 @@
 #############################################
 ####### Install Required Packages ###########
 #############################################
-
+### Uncomment these lines to install if needed
 ## install.packages("rtweet")
 ## install.packages("glue")
 ## install.packages("data.table")
@@ -17,7 +17,7 @@
 ## install.packages("tidyverse")
 ## install.packages("rtweet")
 ## install.packages("stringi")
-## may not need install.packages("curl")
+## install.packages('qdapRegex')
 
 #############################################
 ####### Load Required Packages ##############
@@ -36,14 +36,14 @@ library(rtweet)
 library(tidyverse)
 
 # Connecting to langscape tool
-# may not needlibrary(curl)
 library(httr)
 library(openxlsx)
-# install.packages('qdapRegex')
 library(qdapRegex)
+library(janitor)
 
 
 # For Debugging rm(list=ls())
+# 
 
 #############################################
 ###### Connect to Twitter API with HTTR #####
@@ -103,13 +103,29 @@ twitter_languages <- twitter_languages %>%
   mutate(name = if_else(is.na(name), Language, name)) %>%
   select(code, name)
 
+# Load ISO609-1 and ISO609-2 Crosswalk data
+
+crosswalk <- read_csv("iso-code-crosswalk.csv")
+
+# Select first three columns
+crosswalk <- crosswalk %>%
+  select(1:3)
+
+# Clean column names 
+crosswalk <- clean_names(crosswalk)
+
+# Inner join with twitter languages to get only twitter languages on list
+crosswalk_twitter <- crosswalk %>%
+  inner_join(twitter_languages, by=c("iso639_1code" = "code"))
+
 # Write it out to a CSV. We can load it directly in the future, without connecting to the API.
 
 write.csv(twitter_languages, "data/twitter-supported-languages/output/twitter_languages.csv")
+write.csv(crosswalk_twitter, "data/twitter-supported-languages/output/crosswalk_twitter.csv")
 
 # Remove the twitter token and twitter app.  It will create conflicts when using the RTweet package. Can also remove twitter_supported.
 
-rm(list=setdiff(ls(), "twitter_languages"))
+rm(list=setdiff(ls(), c("twitter_languages","crosswalk_twitter")))
 
 
 #############################################
@@ -158,6 +174,8 @@ language_tweets <- language_tweets %>%
 
 # Define a function called language search that allows you to pass the name of the city, the name of a country, and a circle centered on an latitutde, longitude pair.  The name of the city and country don't actually matter, they're just for inclusion in the dataframe.  What really matters is the geocode.
 
+twitter_languages <- head(twitter_languages)
+
 language_search <- function(city_name, country_name, geocode) {
   # loop through each language code in our languages dataframe
   for (language_code in twitter_languages$code) {
@@ -196,14 +214,209 @@ language_search <- function(city_name, country_name, geocode) {
   # After looping through all the languages, this last step is necessary so that the languages_by_location we've modified inside the function (essentially a copy) overwrites the global languages_by_location that exists outside the function. The double angle bracket <<- instead of normal <- for assignment does that.
   languages_by_location <<- languages_by_location
   language_tweets <<- language_tweets
+}
+
+##########################
+# MODIFY ###########################
+##########################
+
+twitter_languages <- head(twitter_languages)
+
+language_search <- function(city_name, country_name, geocode) {
+  
+  # Reset empty dataframes
+  languages_by_location <- languages_by_location %>%
+    top_n(0)
+  language_tweets <- language_tweets %>%
+    top_n(0)
+  
+  # loop through each language code in our languages dataframe
+  for (language_code in twitter_languages$code) {
+    # create a dataframe called rt_working that searches the target geographic area for one tweet with any text that uses the language in question.
+    rt_working <- as_tibble(search_tweets("", n = 1, include_rts = FALSE, lang = language_code, geocode = geocode))
+    # The dataframe will have either 1 row, if it detects a tweet in a language, or 0 rows, if it fails to find a tweet in that language.
+    # If it has 1 row, save the tweet in a separate dataframe, and modify rt_working to indicate the language is present.
+    if(nrow(rt_working) > 0) {
+      # Bind the tweet content to a dataframe
+      rt_working <- rt_working %>%
+      select(screen_name, text, lang, name, location, description, account_lang, place_name, place_full_name, place_type, country, country_code)
+      language_tweets <- bind_rows(language_tweets, rt_working)
+      # Modify the rt_wroking dataframe to indicate presence of language
+      rt_working <- rt_working %>%
+        mutate(language_code = language_code) %>%
+        mutate(geocode = geocode) %>%
+        mutate(present = "present") %>%
+        mutate(country = country_name) %>%
+        mutate(city = city_name) %>%
+        select(language_code, geocode, present, country, city)
+      # Bind the results to our master dataframe
+      languages_by_location <- bind_rows(languages_by_location, rt_working)
+    } else {
+      # If it has 0 rows, modify rt_working to indicate the language is not present.
+      rt_working <- tibble(
+        language_code = language_code,
+        geocode = geocode,
+        present = "not present",
+        country = country_name,
+        city = city_name
+      )
+      # Bind the results to our master dataframe
+      languages_by_location <- bind_rows(languages_by_location, rt_working)
+    }
+  }
+  # After looping through all the languages, this last step is necessary so that the languages_by_location we've modified inside the function (essentially a copy) overwrites the global languages_by_location that exists outside the function. The double angle bracket <<- instead of normal <- for assignment does that.
+  assign(paste0("languages_by_location_", country_name), languages_by_location, envir = .GlobalEnv)
+   assign(paste0("language_tweets_", country_name), language_tweets, envir = .GlobalEnv)
 
 }
+
+####################################################
+# MODIFY WITH LANG CHECK ###########################
+####################################################
+
+twitter_languages <- head(twitter_languages)
+
+language_search <- function(city_name, country_name, geocode) {
+  
+  # Reset empty dataframes
+  languages_by_location <- languages_by_location %>%
+    top_n(0)
+  language_tweets <- language_tweets %>%
+    top_n(0)
+  
+  # loop through each language code in our languages dataframe
+  for (language_code in twitter_languages$code) {
+    # create a dataframe called rt_working that searches the target geographic area for one tweet with any text that uses the language in question.
+    rt_working <- as_tibble(search_tweets("", n = 1, include_rts = FALSE, lang = language_code, geocode = geocode))
+    # The dataframe will have either 1 row, if it detects a tweet in a language, or 0 rows, if it fails to find a tweet in that language.
+    # If it has 1 row, save the tweet in a separate dataframe, and modify rt_working to indicate the language is present.
+    if(nrow(rt_working) > 0) {
+      # Bind the tweet content to a dataframe
+      rt_working <- rt_working %>%
+        select(screen_name, text, lang, name, location, description, account_lang, place_name, place_full_name, place_type, country, country_code)
+      language_tweets <- bind_rows(language_tweets, rt_working)
+      # Modify the rt_wroking dataframe to indicate presence of language
+      rt_working <- rt_working %>%
+        mutate(language_code = language_code) %>%
+        mutate(geocode = geocode) %>%
+        mutate(present = "present") %>%
+        mutate(country = country_name) %>%
+        mutate(city = city_name) %>%
+        select(language_code, geocode, present, country, city)
+      # Bind the results to our master dataframe
+      languages_by_location <- bind_rows(languages_by_location, rt_working)
+    } else {
+      # If it has 0 rows, modify rt_working to indicate the language is not present.
+      rt_working <- tibble(
+        language_code = language_code,
+        geocode = geocode,
+        present = "not present",
+        country = country_name,
+        city = city_name
+      )
+      # Bind the results to our master dataframe
+      languages_by_location <- bind_rows(languages_by_location, rt_working)
+    }
+  }
+
+  ######################################
+  ### Check results of language Tweets #
+  ######################################
+  
+  # After list of tweets returned by location functions finished running, bind it back to twitter_langugages dataframe to get names.
+  
+  language_tweets <- language_tweets %>%
+    full_join(twitter_languages, by = c("lang" = "code")) %>%
+    rename(name = name.x, language_name = name.y) %>%
+    select(language_name, lang, text, everything()) %>%
+    filter(!is.na(text))
+  
+  #### Parse text
+  language_tweets <- language_tweets %>%
+    mutate(text = str_replace_all(text,
+                                  pattern=regex("(www|https?[^\\s]+)"),
+                                  replacement = "")) %>%
+    mutate(text = rm_hash(text)) %>%
+    mutate(text = rm_url(text)) %>%
+    mutate(text = rm_twitter_url(text)) %>%
+    mutate(unique_id = as.numeric(rownames(language_tweets))) %>%
+    select(unique_id, everything())
+
+  #### Pipe out to Langscape ID Tool
+  
+  # Select only columns we need, then create a column with %20 instead of spaces in tweet text. 
+  language_tweets <- language_tweets %>%
+    select(unique_id, language_name, lang, text) %>%
+    mutate(encoded_text = str_replace_all(language_tweets$text, "\\ ", "%20"))
+  
+  # make empty dataframe 
+  language_tweets_empty <- language_tweets %>%
+    top_n(0)
+  
+  for (i in language_tweets$encoded_text) {
+    # Define variables to build url with query string for connecting to langscape tool
+    langscape <- "http://langscape.umd.edu/php/LID_Exec.php?sampleText="
+    post_url <- paste0(langscape, i)
+    
+    # Using HTTR, post the url to the langscape tool
+    post_langscape <- POST(post_url)
+    
+    # Convert the response from a list to dataframe
+    response_langscape <- enframe(content(post_langscape, as = "text"))
+    
+    # split the langscape language id response scores into a dataframe, and just keep the language code for the top response.
+    
+    response_langscape <- response_langscape %>%
+      select(-name) %>%
+      separate(value, sep="\\^", into=c("a","b","c","d","e")) %>%
+      gather() %>%
+      separate(value, sep="\\|", into=c("source1","source2","score")) %>%
+      mutate(language_code = str_sub(source1, 1,3)) %>%
+      select(language_code, score) %>%
+      arrange(desc(score)) %>%
+      slice(1) %>%
+      select(language_code)
+    
+    # Filter just the one row 
+    language_tweets_row <- language_tweets %>%
+      filter(encoded_text == i)  
+    
+    # Bind the code to the crosswalk table
+    crosswalk_convert <- response_langscape %>%
+      left_join(crosswalk_twitter, by = c("language_code" = "iso639_2code" ))
+    
+    # Bind the result to the language_tweets_row   
+    language_tweets_row <- language_tweets_row %>%
+      left_join(crosswalk_convert, by = c("lang" = "iso639_1code"))
+    
+    # Bind to empty dataframe 
+    language_tweets_empty <- bind_rows(language_tweets_empty, language_tweets_row)
+  }
+  
+  language_tweets <- language_tweets_empty %>%
+    distinct()  
+  
+  #languages_by_location <- languages_by_location %>%
+   # left_join(language_tweets, by = c("language_code" = "lang"))
+  
+  # languages_by_location <- languages_by_location %>%
+  #  mutate(langscape_present = case_when(
+   #          is.na(unique_id) ~ "not present",
+  #           is.na(language_code.y) ~ "not present",
+   #          !is.na(language_code.y) ~ "present"))
+  
+  # After looping through all the languages, this last step is necessary so that the languages_by_location we've modified inside the function (essentially a copy) overwrites the global languages_by_location that exists outside the function. The double angle bracket <<- instead of normal <- for assignment does that.
+  assign(paste0("languages_by_location_", country_name), languages_by_location, envir = .GlobalEnv)
+  assign(paste0("language_tweets_", country_name), language_tweets, envir = .GlobalEnv)
+  
+### 
+}
+
+
 
 #############################################
 #### Search for Languages Using Function ####
 #############################################
-
-
 
 # language_search(city_name, country_name, geocode) takes three arguments. Each argument must be in quotes. city_name and country_name aren't actually used in the search, they're just there for the output dataframe. geocode must be in a specific format. Latitude and Longitude of specific point, followed by radius around that point in miles."51.50,0.15,20mi". This is finicky. No spaces.
 
@@ -256,9 +469,9 @@ writeData(wb, sheet = 1, language_tweets_df)
 # Save Workbook
 saveWorkbook(wb, "tweets.xlsx", overwrite = TRUE)
 
-#####################################
-### Check results of language Tweets#
-#####################################
+######################################
+### Check results of language Tweets #
+######################################
 
 # After list of tweets returned by location functions finished running, bind it back to twitter_langugages dataframe to get names.
 
@@ -276,43 +489,80 @@ language_tweets_copy <- language_tweets_copy %>%
   mutate(text = rm_hash(text)) %>%
   mutate(text = rm_url(text)) %>%
   mutate(text = rm_twitter_url(text)) %>%
-  mutate(unique_id = rownames(language_tweets_copy)) %>%
+  mutate(unique_id = as.numeric(rownames(language_tweets_copy))) %>%
   select(unique_id, everything())
+
+
+
 
 #### Pipe out to Langscape ID Tool
 
-# Select only columns we need
-language_tweets_simple <- language_tweets_copy %>%
-  select(unique_id, language_name, lang, text)
-# For now, select one row
-sample <- language_tweets_simple %>%
-  filter(unique_id == 1)
-# Create a copy of tweet text with %20 instead of spaces, for passing through URL string.
-sample <- sample %>%
-  mutate(encoded_text = str_replace_all(sample$text, "\\ ", "%20"))
-# Define variables to build url with query string for connecting to langscape tool langscape <- "http://langscape.umd.edu/php/LID_Exec.php?sampleText="
-post_url <- paste0(langscape, sample$encoded_text)
+# Select only columns we need, then create a column with %20 instead of spaces in tweet text. 
+language_tweets_copy <- language_tweets_copy %>%
+  select(unique_id, language_name, lang, text) %>%
+  mutate(encoded_text = str_replace_all(language_tweets_copy$text, "\\ ", "%20"))
 
-# Using HTTR, post the url to the langscape tool
-post_langscape <- POST(post_url)
+# make empty dataframe 
+language_tweets_empty <- language_tweets_copy %>%
+  top_n(0)
+ 
+for (i in language_tweets_copy$encoded_text) {
+  # Define variables to build url with query string for connecting to langscape tool
+  langscape <- "http://langscape.umd.edu/php/LID_Exec.php?sampleText="
+  post_url <- paste0(langscape, i)
 
-# Convert the response from a list to dataframe
-response_langscape <- enframe(content(post_langscape, as = "text"))
+  # Using HTTR, post the url to the langscape tool
+  post_langscape <- POST(post_url)
+  
+  # Convert the response from a list to dataframe
+  response_langscape <- enframe(content(post_langscape, as = "text"))
+  
+  # split the langscape language id response scores into a dataframe, and just keep the language code for the top response.
+  
+  response_langscape <- response_langscape %>%
+    select(-name) %>%
+    separate(value, sep="\\^", into=c("a","b","c","d","e")) %>%
+    gather() %>%
+    separate(value, sep="\\|", into=c("source1","source2","score")) %>%
+    mutate(language_code = str_sub(source1, 1,3)) %>%
+    select(language_code, score) %>%
+    arrange(desc(score)) %>%
+    slice(1) %>%
+    select(language_code)
 
-# split the langscape language id response scores into a dataframe, and just keep the language code for the top response.
+# Filter just the one row 
+  language_tweets_row <- language_tweets_copy %>%
+    filter(encoded_text == i)  
 
-response_langscape <- response_langscape %>%
-  select(-name) %>%
-  separate(value, sep="\\^", into=c("a","b","c","d","e")) %>%
-  gather() %>%
-  separate(value, sep="\\|", into=c("source1","source2","score")) %>%
-  mutate(language_code = str_sub(source1, 1,3)) %>%
-  select(language_code, score) %>%
-  arrange(desc(score)) %>%
-  slice(1) %>%
-  select(language_code)
+# Bind the code to the crosswalk table
+  crosswalk_convert <- response_langscape %>%
+    left_join(crosswalk_twitter, by = c("language_code" = "iso639_2code" ))
 
-# bind it back to the dataframe in question
+# Bind the result to the language_tweets_row   
+  language_tweets_row <- language_tweets_row %>%
+    left_join(crosswalk_convert, by = c("lang" = "iso639_1code"))
+
+# Bind to empty dataframe 
+    language_tweets_empty <- bind_rows(language_tweets_empty, language_tweets_row)
+}
+ 
+language_tweets_empty <- language_tweets_empty %>%
+  distinct()
+
+
+  
+
+
+
+
+
+# Bind results from langscape to crosswalk table 
+
+
+
+# Bind it to sample 
+applyit <- checks %>%
+  left_join(sample, by = c("iso639_1code" = "lang"))
 
 
 
