@@ -4,6 +4,7 @@
 
 # This project is part of an effort to use publicly available information on the web -- including information on social networks like Twitter -- to determine what languages are spoken in a given geographic area.
 
+
 #############################################
 ####### Load Required Packages ##############
 #############################################
@@ -44,6 +45,8 @@ rm(list=ls())
 
 # Load the file httr-keys.R that contains your authentication keys to connect to Twitter. It will load an object called myapp, which contains your keys.
 source("twitter_keys/httr-keys.R")
+
+# Execute the functions to get two dataframes -- twitter_lanugages (all of languages twitter supports, with two letter code), and crosswalk_twitter (which will allow us to compare langscape language check output)
 source("functions/get_twitter_supported_languages.r")
 
 
@@ -65,7 +68,7 @@ source("functions/get_twitter_supported_languages.r")
 
 source("twitter_keys/rtweet-keys.R")
 source("functions/language_search.R")
-source("rate_check.R")
+source("functions/rate_check.R")
 
 #############################################
 #### Search for Languages Using Function ####

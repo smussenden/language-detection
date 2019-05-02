@@ -166,3 +166,4 @@ language_search <- function(city_name, country_name, geocode) {
   assign(paste0("language_tweets_", country_name), language_tweets, envir = .GlobalEnv)
   
 }
+
