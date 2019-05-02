@@ -1,0 +1,7 @@
+\begin{tabular}{lr}
+  \hline \hline
+ type & percent_accuracy \\ \hline
+ true-positive  & \verb#66.67# \\
+ false-negative & \verb#33.33# \\ \hline
+\end{tabular}
+\\{\tiny file: test.pdf}
