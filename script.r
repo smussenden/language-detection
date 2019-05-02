@@ -8,47 +8,34 @@
 #############################################
 ####### Load Required Packages ##############
 #############################################
+source("functions/load_packages.r")
 
-# For connecting directly to Twitter API to get supported languages, then  parsing output
-library(httr)
-library(httpuv)
-library(jsonlite)
-library(stringi)
-
-# For easier connection to Twitter search API
-library(rtweet)
-
-# For general data wrangling
-library(tidyverse)
-
-# For connecting to langscape tool to spot-check Twitter language results
-library(httr)
-library(openxlsx)
-library(qdapRegex)
-library(janitor)
-
-library(gridExtra)
 
 rm(list=ls())
 
 #############################################
-###### Connect to Twitter API with HTTR #####
+###### Connect to Twitter API  ##############
 #############################################
 
-# Modified version of directions here: https://github.com/r-lib/httr/blob/master/demo/oauth1-twitter.r. As those directions note, you need to register an app at https://apps.twitter.com/ for use with HTTR package.
-
-# One note, if you follow directions linked above. The directions say to make sure to set the app's callback url to "http://127.0.0.1:1410/".  That didn't work for us, kept getting 403 errors (forbidden), which was a sign that there was a problem with callback URL.  It was only after we added every possible itteration of that URL, including localhost/1410, that it actually worked! You can add up to 10 callback URLs, so add as many as you want. This is what we put. https://localhost:1410, http://127.0.0.1:1410/, https://127.0.0.1:1410, http://localhost:1410, https://localhost:1410/, http://localhost:1410/, https://127.0.0.1:1410/, http://127.0.0.1:1410.  This step is necessary, because it will launch a browser window and have you authenticate with twitter.
+# Load the file twitter_keys/httr-keys.R that contains your authentication keys to connect to Twitter. This file has not been included in the repo, so you'll need to make your own. 
 
 # In the folder twitter_keys, create a new file called httr-keys.R.  In that file, paste in a function with your app name, consumer API key and consumer secret key. The function should look like this, subsitituting your app name, key and secret.
 
 # myapp <- oauth_app("app_name",
 #                   key = "pastekeyinhere",
-#                   secret = "pastesecretinhere"
+#                   secret = "pastesecretinhere")
 
-# Load the file httr-keys.R that contains your authentication keys to connect to Twitter. It will load an object called myapp, which contains your keys.
+# Directions on how to make an app and get the key and secret are here: https://github.com/r-lib/httr/blob/master/demo/oauth1-twitter.r. As those directions note, you need to register an app at https://apps.twitter.com/ for use with HTTR package. One note, if you follow directions linked above. The directions say to make sure to set the app's callback url to "http://127.0.0.1:1410/".  That didn't work for us, kept getting 403 errors (forbidden), which was a sign that there was a problem with callback URL.  It was only after we added every possible itteration of that URL, including localhost/1410, that it actually worked! You can add up to 10 callback URLs, so add as many as you want. This is what we put. https://localhost:1410, http://127.0.0.1:1410/, https://127.0.0.1:1410, http://localhost:1410, https://localhost:1410/, http://localhost:1410/, https://127.0.0.1:1410/, http://127.0.0.1:1410.  This step is necessary, because it will launch a browser window and have you authenticate with twitter.
+
+# Load the Twitter keys file you created
 source("twitter_keys/httr-keys.R")
 
-# Execute the functions to get two dataframes -- twitter_lanugages (all of languages twitter supports, with two letter code), and crosswalk_twitter (which will allow us to compare langscape language check output)
+##############################################################
+###### Get List of Twitter Supported Languages  ##############
+##############################################################
+
+# The function below will return two dataframes.  twitter_lanugages (all of the languages twitter supports, with two letter code), and crosswalk_twitter (which will allow us to compare three letter language code from langscape output to two letter twitter language codes)
+
 source("functions/get_twitter_supported_languages.r")
 
 
@@ -56,7 +43,7 @@ source("functions/get_twitter_supported_languages.r")
 ###### Connect to RTWEET Package ############
 #############################################
 
-# In the folder twitter_keys, create a new file called rtweet-keys.R.  In that file, paste in a function with your app name, consumer key, consumer secret key, access token and access secret. The function should look like this, subsitituting your info.
+# In the folder twitter_keys, create a new file called rtweet-keys.R. In that file, paste in a function with your app name, consumer key, consumer secret key, access token and access secret. Note: you'll need to create a separate app from the one you used to get Twitter supported languages above, but the directions are the same. The function should look like this, subsitituting your info. 
 
 # create_token(
 #  app = "yourappname",
@@ -69,7 +56,19 @@ source("functions/get_twitter_supported_languages.r")
 # Load the file rtweet-keys.R that contains your authentication keys to connect to Twitter. It will create a token with your information.
 
 source("twitter_keys/rtweet-keys.R")
+
+#################################################################
+###### Load Twitter Search for Languages Functions ##############
+#################################################################
+
+# The language search function will take lat long coordinates you feed it and a radius around those coordinates and loop through all of the languages Twitter supports searching for a tweet in each language.  If it finds a tweet for a given language, it will make a note that Twitter considered the language to be "present" in that area.  If it doesn't find a tweet, it will consider the language to be "not present".  As a second verification step, it will store the text of the tweet and run it through the Lanugage Science Center's Langscape tool to see what language it thinks the Tweet is.  If it matches what Twitter thinks the language is, it will note that.  
+
+# When executed, this function returns two dataframes.  Languages_by_location_LOCATIONNAME shows for each language Twitter supports whether or not the language was found in that location and whether or not it was confirmed by Langscape.  Language_tweets_LOCATION shows what the text of the tweet was for each language identified by Twitter, and for tweets confirmed by Langscape, what the correspondening language code was. 
+
 source("functions/language_search.R")
+
+# The rate check function is necessary to run after you run the language_search function for each city. With the lowest level Twitter API access, you only get 180 searches every 15 minutes.  Running this function will tell you how many searches you have remaining in each 15 minute block.  You can essentially run two areas in each 15 minute block.
+
 source("functions/rate_check.R")
 
 #############################################
@@ -83,9 +82,6 @@ source("functions/rate_check.R")
 
 # London
 language_search("London", "UK", "51.50,0.15,20mi")
-
-# Before moving on, check and see how many tweets we can continue collecting before hitting rate limit, and time remaining before rate limit resets (every 15 minutes, 180 tweets max). Build a function called rate_check, then run rate_check.  In the future, could write a function to check if there's time left before rate limit expires, and, if so, move on.
-
 rate_check()
 
 # New York
@@ -104,6 +100,8 @@ rate_check()
 #### Read in Language on the Web Data #######
 #############################################
 
+# These tables contain information on language use in each target area found through means other than analyzing Twitter, including meetup groups, court translation and other sources. They're used to buttress Twitter data.
+
 bolivia_web <- read_csv("data/web-research/bolivia-web.csv")
 tajikistan_web <- read_csv("data/web-research/tajikistan-web.csv")
 london_web <- read_csv("data/web-research/london-web.csv")
@@ -113,72 +111,31 @@ nyc_web <- read_csv("data/web-research/nyc-web.csv")
 #### Read in Census Data ####################
 #############################################
 
+# This is the ground truth data on language use, which we'll use to test accuracy of our predictions about language use
+
 bolivia_census <- read_csv("data/census/bolivia-census.csv")
 tajikistan_census <- read_csv("data/census/tajikistan-census.csv")
 london_census <- read_csv("data/census/london-census.csv")
 nyc_census <- read_csv("data/census/nyc-census.csv")
 
 #############################################
-#### Check with Twitter + Web ###############
+#### Load Prediction Function ###############
 #############################################
+# This function takes the results of our Twitter search (and Langscape varification), adds the "signals of language use on the web" for each area to the Twitter data and makes a prediction for each language on whether or not it should exist. It then compares the results to the ground truth data and for each language determines whether or not the prediction was correct.  It produces two data frames: a matrix indicating whether true positive, false positive or false negative. There are no true negatives in this data. And then in a separate dataframe it computes an accuracy score, based on false negative and true positive. True positive is accuracy.
+# We compute for with langscape check and without.
+
+
 ####THIS NEEDS WORK, NOT ACCURATELY CATCHIGN BOLIVIA
-prediction <- function(location, languages_by_location_df, web, census) {
-  
-  temp_1 <<- languages_by_location_df %>%
-    mutate(code = language_code_2_twitter, present = presence_pre_langscape, source = "twitter") %>%
-    select(name, code, present, source) %>%
-    na.omit()
-  
-  temp_2 <<- web %>%
-    mutate(source = "web", present = "present") %>%
-    select(name, code, present, source) %>%
-    na.omit()
-  
-  temp_3 <<- bind_rows(temp_1, temp_2)
-  
-  temp_4 <<- temp_3 %>%
-    filter(present == "present") %>%
-    distinct(name) %>%
-    mutate(predicted = "predicted to exist")
-  
-  temp_5 <<- census %>%
-    select(name) %>%
-    mutate(actual = "actually exists")
-  
-  temp_6 <<- full_join(temp_5, temp_4, by="name") %>%
-    select(name, predicted, actual) %>%
-    mutate(result_type_tf = case_when(
-      !is.na(predicted) & !is.na(actual) ~ "true",
-      is.na(predicted) & is.na(actual) ~ "true",
-      is.na(predicted) & !is.na(actual) ~ "false",
-      !is.na(predicted) & is.na(actual) ~ "false")) %>%
-    mutate(result_type_pn = case_when(
-      !is.na(predicted) & !is.na(actual) ~ "positive",
-      is.na(predicted) & is.na(actual) ~ "negative",
-      is.na(predicted) & !is.na(actual) ~ "negative",
-      !is.na(predicted) & is.na(actual) ~ "positive"))
-  
-  temp_7 <<- temp_6 %>%
-    group_by(result_type_tf, result_type_pn) %>%
-    summarise(count = n()) %>%
-    arrange(desc(result_type_pn))
-  
-  temp_8 <<- temp_7 %>%
-    filter((result_type_tf == "true" & result_type_pn == "positive") | (result_type_tf == "false" & result_type_pn == "negative")) %>%
-    ungroup() %>% 
-    mutate(percent_accuracy = round(count/sum(count)*100, 2)) %>%
-    mutate(type = paste0(result_type_tf,"-",result_type_pn)) %>%
-    select(type, percent_accuracy)
-  
-  assign(paste0(location, "_accuracy"), temp_8, envir = .GlobalEnv)
-  assign(paste0(location, "_matrix"), temp_6, envir = .GlobalEnv)
-  
-  
-  
-}
+source("functions/prediction.R")
 
-prediction("UK", languages_by_location_UK, london_web, london_census)
-prediction("NYC", languages_by_location_NY, nyc_web, nyc_census)
-prediction("Bolivia", languages_by_location_Bolivia, bolivia_web, bolivia_census)
-prediction("UK", languages_by_location_UK, london_web, london_census)
+# Without langscape confirmation
+prediction_without_langscape("UK", languages_by_location_UK, london_web, london_census)
+prediction_without_langscape("NYC", languages_by_location_NY, nyc_web, nyc_census)
+prediction_without_langscape("Bolivia", languages_by_location_Bolivia, bolivia_web, bolivia_census)
+prediction_without_langscape("Tajikistan", languages_by_location_Tajikistan, tajikistan_web, tajikistan_census)
 
+# With langscape confirmation
+prediction_with_langscape("UK", languages_by_location_UK, london_web, london_census)
+prediction_with_langscape("NYC", languages_by_location_NY, nyc_web, nyc_census)
+prediction_with_langscape("Bolivia", languages_by_location_Bolivia, bolivia_web, bolivia_census)
+prediction_with_langscape("Tajikistan", languages_by_location_Tajikistan, tajikistan_web, tajikistan_census)
