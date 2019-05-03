@@ -10,9 +10,6 @@
 #############################################
 source("functions/load_packages.r")
 
-
-rm(list=ls())
-
 #############################################
 ###### Connect to Twitter API  ##############
 #############################################
@@ -88,6 +85,8 @@ rate_check()
 language_search("New York", "NY", "40.71,-74.01,20mi")
 rate_check()
 
+# Wait 15 minutes before moving on
+
 # Bolivia
 language_search("LaPaz", "Bolivia", "-16.50,-68.15,20mi")
 rate_check()
@@ -122,20 +121,39 @@ nyc_census <- read_csv("data/census/nyc-census.csv")
 #### Load Prediction Function ###############
 #############################################
 # This function takes the results of our Twitter search (and Langscape varification), adds the "signals of language use on the web" for each area to the Twitter data and makes a prediction for each language on whether or not it should exist. It then compares the results to the ground truth data and for each language determines whether or not the prediction was correct.  It produces two data frames: a matrix indicating whether true positive, false positive or false negative. There are no true negatives in this data. And then in a separate dataframe it computes an accuracy score, based on false negative and true positive. True positive is accuracy.
-# We compute for with langscape check and without.
 
-
-####THIS NEEDS WORK, NOT ACCURATELY CATCHIGN BOLIVIA
+# Load the prediction function
 source("functions/prediction.R")
 
-# Without langscape confirmation
+#############################################
+#### Execute  Prediction Function ###############
+#############################################
+
+# Without langscape confirmation of Twitter Data
+
+# London
 prediction_without_langscape("UK", languages_by_location_UK, london_web, london_census)
+
+# New York
 prediction_without_langscape("NYC", languages_by_location_NY, nyc_web, nyc_census)
+
+# Bolivia
 prediction_without_langscape("Bolivia", languages_by_location_Bolivia, bolivia_web, bolivia_census)
+
+# Tajikistan
 prediction_without_langscape("Tajikistan", languages_by_location_Tajikistan, tajikistan_web, tajikistan_census)
 
-# With langscape confirmation
+# With langscape confirmation of Twitter Data
+
+# London
 prediction_with_langscape("UK", languages_by_location_UK, london_web, london_census)
+
+# New York
 prediction_with_langscape("NYC", languages_by_location_NY, nyc_web, nyc_census)
+
+# Bolivia
+
 prediction_with_langscape("Bolivia", languages_by_location_Bolivia, bolivia_web, bolivia_census)
+
+# Tajikistan
 prediction_with_langscape("Tajikistan", languages_by_location_Tajikistan, tajikistan_web, tajikistan_census)
