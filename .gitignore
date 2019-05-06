@@ -38,3 +38,5 @@ rsconnect/
 
 # Ignore keys
 /twitter_keys
+
+.DS_Store
